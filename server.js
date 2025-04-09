@@ -7,7 +7,7 @@ const app = express()
 const PORT = process.env.PORT || 4000
 
 const adapter = new JSONFile('events.json')
-const db = new Low(adapter, { events: [] })
+const db = new Low(adapter, { events: [] }) // 🧠 Pass default here
 
 app.use(cors())
 app.use(express.json())
@@ -53,9 +53,10 @@ async function startServer() {
     res.status(201).json(newEvent)
   })
 
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, () => {
     console.log(`✅ Server running at http://localhost:${PORT}`)
   })
 }
 
+// 🚨 This line is required to actually start the server
 startServer()
