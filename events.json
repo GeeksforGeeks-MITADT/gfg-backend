@@ -1,0 +1,41 @@
+{
+    "events": [
+      {
+        "id": "cpp-bootcamp-2024",
+        "title": "C++ Bootcamp 3.0",
+        "description": "A 3-day immersive bootcamp organized by GFG and CodeChef focusing on core C++ concepts with interactive sessions, coding activities, and Q&A with experts.",
+        "category": "Technical",
+        "date": "2024-10-07 to 2024-10-09",
+        "time": "11:00 AM - 1:00 PM",
+        "speakers": "Aryan Goli, Akshay Patra, Nikhil Parbat, Akshada Pathak, Divit Jain, Dadasaheb Bhosure",
+        "prerequisites": "Basic programming knowledge",
+        "posterUrl": "https://i.imgur.com/Us18Bo3.jpeg",
+        "registrationLink": "https://forms.gle/exampleCppBootcamp"
+      },
+      {
+        "id": "codegenesis-2024",
+        "title": "Codegenesis – A Beginner’s Journey to Coding",
+        "description": "A department-level event equipping beginners with essential tools and techniques for competitive programming through real-world examples and hands-on practice.",
+        "category": "Technical",
+        "date": "2024-09-30",
+        "time": "3:30 PM - 5:30 PM",
+        "speakers": "Nidhi Phophaliya, Akshada Pathak, Mahi",
+        "prerequisites": "None",
+        "posterUrl": "https://i.imgur.com/bdQmgni.png",
+        "registrationLink": "https://forms.gle/exampleCodegenesis"
+      },
+      {
+        "id": "ai-odyssey-2025",
+        "title": "AI Odyssey",
+        "description": "A hands-on 3-day AI workshop covering cutting-edge technologies including Generative AI, RAG, and AI Agent development. 3 days, 3 projects.",
+        "category": "Technical",
+        "date": "2025-04-07 to 2025-04-09",
+        "time": "2:30 PM - 4:30 PM",
+        "speakers": "TBA",
+        "prerequisites": "Basic knowledge of Python or AI concepts is helpful",
+        "posterUrl": "https://i.imgur.com/PJomG9z.png",
+        "registrationLink": "https://forms.gle/exampleAiOdyssey"
+      }
+    ]
+  }
+  
