@@ -4,13 +4,18 @@ const { Low } = require('lowdb')
 const { JSONFile } = require('lowdb/node')
 
 const app = express()
-const PORT = process.env.PORT || 4000
+const PORT = process.env.PORT || 4000 // ✅ Use Render's dynamic port
 
 const adapter = new JSONFile('events.json')
-const db = new Low(adapter, { events: [] }) // 🧠 Pass default here
+const db = new Low(adapter, { events: [] })
 
 app.use(cors())
 app.use(express.json())
+
+// 🌐 Health check route
+app.get('/', (req, res) => {
+  res.send('🎉 GFG Backend is running!')
+})
 
 async function startServer() {
   await db.read()
@@ -58,5 +63,4 @@ async function startServer() {
   })
 }
 
-// 🚨 This line is required to actually start the server
 startServer()
