@@ -1,7 +1,10 @@
-const express = require('express')
-const cors = require('cors')
-const { Low } = require('lowdb')
-const { JSONFile } = require('lowdb/node')
+import express from 'express'
+import cors from 'cors'
+import { Low } from 'lowdb'
+import { JSONFile } from 'lowdb/node'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 4000 // ✅ Use Render's dynamic port
@@ -9,7 +12,13 @@ const PORT = process.env.PORT || 4000 // ✅ Use Render's dynamic port
 const adapter = new JSONFile('events.json')
 const db = new Low(adapter, { events: [] })
 
-app.use(cors())
+// Configure CORS for production security
+const corsOptions = {
+  // Reflect the request origin or your specified CORS_ORIGIN
+  origin: process.env.CORS_ORIGIN || '*',
+  optionsSuccessStatus: 200,
+}
+app.use(cors(corsOptions))
 app.use(express.json())
 
 // 🌐 Health check route
@@ -36,7 +45,16 @@ async function startServer() {
       title, description, category, date, time, duration, location, speaker, prerequisites, apiKey
     } = req.body
 
-    if (apiKey !== 'admin123') {
+    // Get admin secret key from environment variables
+    const adminSecretKey = process.env.ADMIN_SECRET_KEY
+
+    if (!adminSecretKey) {
+      console.error('ADMIN_SECRET_KEY not configured in environment variables')
+      return res.status(500).json({ message: 'Server configuration error' })
+    }
+
+    if (apiKey !== adminSecretKey) {
+      console.warn('Failed admin authentication attempt from:', req.ip)
       return res.status(401).json({ message: 'Unauthorized' })
     }
 
