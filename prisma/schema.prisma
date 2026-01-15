@@ -1,0 +1,415 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== CODEFORGE TABLES (DO NOT MODIFY) ====================
+
+enum Role {
+  USER
+  MODERATOR
+  PROBLEM_SETTER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum Verdict {
+  PENDING
+  RUNNING
+  ACCEPTED
+  WRONG_ANSWER
+  TIME_LIMIT
+  MEMORY_LIMIT
+  RUNTIME_ERROR
+  COMPILATION_ERROR
+}
+
+enum ContestStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  ENDED
+  FINALIZED
+}
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  username        String   @unique
+  passwordHash    String?
+  displayName     String?
+  avatarUrl       String?
+  bio             String?
+  
+  // GFG Chapter user fields
+  phone           String?
+  college         String?
+  branch          String?
+  year            String?   // "1st Year", "2nd Year", etc.
+  
+  oauthProvider   String?
+  oauthId         String?
+  
+  role            Role     @default(USER)
+  isBanned        Boolean  @default(false)
+  
+  rating          Int      @default(1500)
+  maxRating       Int      @default(1500)
+  problemsSolved  Int      @default(0)
+  contestsCount   Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  problems        Problem[]
+  submissions     Submission[]
+  participations  ContestParticipant[]
+  ratingChanges   RatingChange[]
+  
+  // GFG Events relation
+  gfgEvents           GfgEvent[]
+  eventRegistrations  EventRegistration[]
+  eventFeedbacks      EventFeedback[]
+  eventCheckins       EventCheckin[]
+  eventPhotos         EventPhoto[]
+  eventComments       EventComment[]
+  testimonials        Testimonial[]
+  
+  @@index([rating(sort: Desc)])
+}
+
+model Problem {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  title           String
+  description     String
+  inputFormat     String
+  outputFormat    String
+  constraints     String
+  
+  difficulty      Int      @default(5)
+  rating          Int      @default(1500)
+  timeLimit       Int      @default(2000)
+  memoryLimit     Int      @default(262144)
+  
+  tags            String[]
+  isPublic        Boolean  @default(false)
+  
+  solveCount      Int      @default(0)
+  attemptCount    Int      @default(0)
+  
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id])
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  testCases       TestCase[]
+  solutions       Solution[]
+  submissions     Submission[]
+  contestProblems ContestProblem[]
+  
+  @@index([isPublic])
+  @@index([difficulty])
+}
+
+model TestCase {
+  id              String   @id @default(uuid())
+  problemId       String
+  problem         Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  
+  input           String
+  expectedOutput  String
+  isSample        Boolean  @default(false)
+  orderIndex      Int
+  
+  createdAt       DateTime @default(now())
+}
+
+model Solution {
+  id              String   @id @default(uuid())
+  problemId       String
+  problem         Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  
+  language        String
+  code            String
+  isReference     Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+}
+
+model Contest {
+  id              String        @id @default(uuid())
+  slug            String        @unique
+  title           String
+  description     String?
+  
+  startTime       DateTime
+  endTime         DateTime
+  
+  isRated         Boolean       @default(false)
+  isPublic        Boolean       @default(true)
+  status          ContestStatus @default(DRAFT)
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  problems        ContestProblem[]
+  participants    ContestParticipant[]
+  submissions     Submission[]
+  leaderboard     LeaderboardEntry[]
+  ratingChanges   RatingChange[]
+  
+  @@index([status])
+  @@index([startTime])
+}
+
+model ContestProblem {
+  contestId       String
+  contest         Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  
+  problemId       String
+  problem         Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  
+  label           String
+  points          Int      @default(100)
+  
+  @@id([contestId, problemId])
+}
+
+model ContestParticipant {
+  contestId       String
+  contest         Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  registeredAt    DateTime @default(now())
+  
+  @@id([contestId, userId])
+}
+
+model Submission {
+  id              String   @id @default(uuid())
+  
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  
+  problemId       String
+  problem         Problem  @relation(fields: [problemId], references: [id])
+  
+  contestId       String?
+  contest         Contest? @relation(fields: [contestId], references: [id])
+  
+  language        String
+  code            String
+  
+  verdict         Verdict  @default(PENDING)
+  executionTime   Int?
+  memoryUsed      Int?
+  
+  testsPassed     Int      @default(0)
+  testsTotal      Int      @default(0)
+  
+  submittedAt     DateTime @default(now())
+  
+  @@index([userId])
+  @@index([problemId])
+  @@index([contestId])
+  @@index([submittedAt(sort: Desc)])
+}
+
+model LeaderboardEntry {
+  contestId       String
+  contest         Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  
+  userId          String
+  rank            Int
+  score           Int      @default(0)
+  penalty         Int      @default(0)
+  
+  problemScores   Json     @default("{}")
+  lastSubmission  DateTime?
+  
+  @@id([contestId, userId])
+  @@index([contestId, rank])
+}
+
+model RatingChange {
+  id              String   @id @default(uuid())
+  
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  
+  contestId       String
+  contest         Contest  @relation(fields: [contestId], references: [id])
+  
+  oldRating       Int
+  newRating       Int
+  change          Int
+  rank            Int
+  performance     Int?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([userId])
+}
+
+// ==================== GFG STUDENT CHAPTER TABLE (NEW) ====================
+
+model GfgEvent {
+  id               String   @id @default(uuid())
+  title            String
+  description      String
+  category         String   @default("Technical")
+  
+  startDate        DateTime
+  endDate          DateTime
+  startTime        String?
+  endTime          String?
+  
+  speakers         String?
+  prerequisites    String?
+  registrationLink String?
+  posterUrl        String?
+  location         String?
+  
+  // Multiple event images
+  imageUrls        String[]
+  
+  isPublished      Boolean  @default(true)
+  maxParticipants  Int?     // null = unlimited
+  
+  // Post-event recap content
+  recapSummary     String?   // What happened at the event
+  recapHighlights  String[]  // Key highlights as bullet points
+  recapPhotos      String[]  // Photo URLs from the event
+  recapVideoUrl    String?   // YouTube embed URL
+  winners          Json?     // [{ name, position, prize, photo }]
+  themeColor       String?   @default("#2F8D46")
+  isRecapPublished Boolean   @default(false)
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // Creator of the event
+  createdById      String?
+  createdBy        User?    @relation(fields: [createdById], references: [id])
+  
+  // Event registrations & engagement
+  registrations    EventRegistration[]
+  feedbacks        EventFeedback[]
+  checkins         EventCheckin[]
+  photos           EventPhoto[]
+  comments         EventComment[]
+  
+  @@index([startDate])
+  @@index([isPublished])
+}
+
+// In-app event registration
+model EventRegistration {
+  id        String   @id @default(uuid())
+  
+  eventId   String
+  event     GfgEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  status    String   @default("confirmed") // confirmed, waitlisted
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([eventId, userId])  // Prevent duplicate registrations
+  @@index([eventId])
+  @@index([userId])
+}
+
+// Event Feedback (post-event rating)
+model EventFeedback {
+  id        String   @id @default(uuid())
+  
+  eventId   String
+  event     GfgEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  rating    Int      // 1-5 stars
+  comment   String?
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([eventId, userId])  // One feedback per user per event
+  @@index([eventId])
+}
+
+// Event Check-in (attendance verification)
+model EventCheckin {
+  id        String   @id @default(uuid())
+  
+  eventId   String
+  event     GfgEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  checkedAt DateTime @default(now())
+  
+  @@unique([eventId, userId])
+  @@index([eventId])
+}
+
+// Event Photo Wall
+model EventPhoto {
+  id        String   @id @default(uuid())
+  
+  eventId   String
+  event     GfgEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  photoUrl  String
+  caption   String?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([eventId])
+}
+
+// Event Comments
+model EventComment {
+  id        String   @id @default(uuid())
+  
+  eventId   String
+  event     GfgEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  content   String
+  
+  createdAt DateTime @default(now())
+  
+  @@index([eventId])
+}
+
+// Testimonials
+model Testimonial {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  content     String
+  isApproved  Boolean  @default(false)
+  isFeatured  Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+}
