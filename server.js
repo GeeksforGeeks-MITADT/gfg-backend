@@ -1108,16 +1108,21 @@ app.put('/users/profile', verifyToken, async (req, res) => {
   }
 })
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`✅ GFG Backend running at http://localhost:${PORT}`)
-  console.log(`🗄️  Connected to Supabase PostgreSQL`)
-  console.log(`📚 Auth: /auth/register, /auth/login, /auth/me`)
-  console.log(`📅 Events: /events (GET, POST, PUT, DELETE)`)
-  console.log(`📝 Event Registration: /events/:id/register, /registrations`)
-})
+// Start server (only in non-Vercel environment)
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`✅ GFG Backend running at http://localhost:${PORT}`)
+    console.log(`🗄️  Connected to Supabase PostgreSQL`)
+    console.log(`📚 Auth: /auth/register, /auth/login, /auth/me`)
+    console.log(`📅 Events: /events (GET, POST, PUT, DELETE)`)
+    console.log(`📝 Event Registration: /events/:id/register, /registrations`)
+  })
+}
 
 // Graceful shutdown
 process.on('beforeExit', async () => {
   await prisma.$disconnect()
 })
+
+// Export for Vercel serverless
+export default app
