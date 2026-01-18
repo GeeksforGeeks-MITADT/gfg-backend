@@ -8,8 +8,15 @@ import multer from 'multer'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
+import { createClient } from '@supabase/supabase-js'
 
 dotenv.config()
+
+// Initialize Supabase client for storage
+const supabase = createClient(
+  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_ANON_KEY || ''
+)
 
 // Get directory name for ES modules
 const __filename = fileURLToPath(import.meta.url)
@@ -434,6 +441,112 @@ app.get('/auth/users', verifyToken, requireAdmin, async (req, res) => {
     }
   })
   res.json({ users })
+})
+
+// ==================== FILE UPLOAD ROUTES (Supabase Storage) ====================
+
+// Upload file to Supabase Storage
+app.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' })
+    }
+
+    // Check if Supabase is configured
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+      return res.status(500).json({ message: 'Supabase storage not configured' })
+    }
+
+    const fileBuffer = fs.readFileSync(req.file.path)
+    const fileName = `${Date.now()}-${req.file.originalname.replace(/\s/g, '_')}`
+    const bucket = req.body.bucket || 'posters' // Default to posters bucket
+
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, fileBuffer, {
+        contentType: req.file.mimetype,
+        upsert: false
+      })
+
+    // Clean up local file
+    fs.unlinkSync(req.file.path)
+
+    if (error) {
+      console.error('Supabase upload error:', error)
+      return res.status(500).json({ message: 'Failed to upload to storage', error: error.message })
+    }
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName)
+
+    res.json({
+      message: 'File uploaded successfully',
+      url: publicUrlData.publicUrl,
+      path: data.path
+    })
+  } catch (error) {
+    console.error('Upload error:', error)
+    // Clean up local file if it exists
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path)
+    }
+    res.status(500).json({ message: 'Upload failed', error: error.message })
+  }
+})
+
+// Upload multiple photos (for event recaps)
+app.post('/upload/multiple', verifyToken, upload.array('files', 20), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'No files uploaded' })
+    }
+
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+      return res.status(500).json({ message: 'Supabase storage not configured' })
+    }
+
+    const bucket = req.body.bucket || 'event-photos'
+    const uploadedUrls = []
+
+    for (const file of req.files) {
+      const fileBuffer = fs.readFileSync(file.path)
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}-${file.originalname.replace(/\s/g, '_')}`
+
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(fileName, fileBuffer, {
+          contentType: file.mimetype,
+          upsert: false
+        })
+
+      // Clean up local file
+      fs.unlinkSync(file.path)
+
+      if (!error) {
+        const { data: publicUrlData } = supabase.storage
+          .from(bucket)
+          .getPublicUrl(fileName)
+        uploadedUrls.push(publicUrlData.publicUrl)
+      }
+    }
+
+    res.json({
+      message: `${uploadedUrls.length} files uploaded successfully`,
+      urls: uploadedUrls
+    })
+  } catch (error) {
+    console.error('Multiple upload error:', error)
+    // Clean up any remaining local files
+    if (req.files) {
+      for (const file of req.files) {
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path)
+      }
+    }
+    res.status(500).json({ message: 'Upload failed', error: error.message })
+  }
 })
 
 // ==================== GFG EVENT ROUTES ====================
@@ -1105,6 +1218,307 @@ app.put('/users/profile', verifyToken, async (req, res) => {
     res.json(user)
   } catch (error) {
     res.status(500).json({ message: 'Failed to update profile' })
+  }
+})
+// ==================== LEADERBOARD & POINTS ROUTES ====================
+
+// Points configuration
+const POINTS_CONFIG = {
+  EVENT_REGISTRATION: 10,
+  EVENT_CHECKIN: 20,
+  PHOTO_SHARED: 5,
+  COMMENT_POSTED: 3,
+  FEEDBACK_GIVEN: 15,
+  TESTIMONIAL_APPROVED: 25
+}
+
+// Calculate points for a user
+async function calculateUserPoints(userId) {
+  const [registrations, checkins, photos, comments, feedbacks, testimonials] = await Promise.all([
+    prisma.eventRegistration.count({ where: { userId } }),
+    prisma.eventCheckin.count({ where: { userId } }),
+    prisma.eventPhoto.count({ where: { userId } }),
+    prisma.eventComment.count({ where: { userId } }),
+    prisma.eventFeedback.count({ where: { userId } }),
+    prisma.testimonial.count({ where: { userId, isApproved: true } })
+  ])
+
+  return (
+    registrations * POINTS_CONFIG.EVENT_REGISTRATION +
+    checkins * POINTS_CONFIG.EVENT_CHECKIN +
+    photos * POINTS_CONFIG.PHOTO_SHARED +
+    comments * POINTS_CONFIG.COMMENT_POSTED +
+    feedbacks * POINTS_CONFIG.FEEDBACK_GIVEN +
+    testimonials * POINTS_CONFIG.TESTIMONIAL_APPROVED
+  )
+}
+
+// Get leaderboard
+app.get('/leaderboard', async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query
+
+    const users = await prisma.user.findMany({
+      where: { isBanned: false },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        points: true,
+        college: true,
+        createdAt: true,
+        _count: {
+          select: {
+            eventRegistrations: true,
+            eventCheckins: true,
+            eventPhotos: true,
+            eventComments: true
+          }
+        }
+      },
+      orderBy: { points: 'desc' },
+      take: parseInt(limit),
+      skip: parseInt(offset)
+    })
+
+    // Add rank to each user
+    const rankedUsers = users.map((user, index) => ({
+      rank: parseInt(offset) + index + 1,
+      ...user,
+      stats: {
+        eventsAttended: user._count.eventRegistrations,
+        checkIns: user._count.eventCheckins,
+        photos: user._count.eventPhotos,
+        comments: user._count.eventComments
+      }
+    }))
+
+    // Remove _count from response
+    rankedUsers.forEach(u => delete u._count)
+
+    const totalUsers = await prisma.user.count({ where: { isBanned: false } })
+
+    res.json({
+      leaderboard: rankedUsers,
+      total: totalUsers,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    })
+  } catch (error) {
+    console.error('Leaderboard error:', error)
+    res.status(500).json({ message: 'Failed to fetch leaderboard' })
+  }
+})
+
+// Get top users for widget
+app.get('/leaderboard/top', async (req, res) => {
+  try {
+    const { limit = 5 } = req.query
+
+    const users = await prisma.user.findMany({
+      where: { isBanned: false, points: { gt: 0 } },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        points: true
+      },
+      orderBy: { points: 'desc' },
+      take: parseInt(limit)
+    })
+
+    const topUsers = users.map((user, index) => ({
+      rank: index + 1,
+      ...user
+    }))
+
+    res.json(topUsers)
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch top users' })
+  }
+})
+
+// Recalculate all user points (admin only)
+app.post('/admin/recalculate-points', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({ select: { id: true } })
+
+    let updated = 0
+    for (const user of users) {
+      const points = await calculateUserPoints(user.id)
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { points }
+      })
+      updated++
+    }
+
+    res.json({ message: `Recalculated points for ${updated} users` })
+  } catch (error) {
+    console.error('Points recalculation error:', error)
+    res.status(500).json({ message: 'Failed to recalculate points' })
+  }
+})
+
+// Update user points after activity (internal helper)
+async function updateUserPoints(userId) {
+  const points = await calculateUserPoints(userId)
+  await prisma.user.update({
+    where: { id: userId },
+    data: { points }
+  })
+  return points
+}
+
+// ==================== NOTIFICATION ROUTES ====================
+
+// Get user notifications
+app.get('/notifications', verifyToken, async (req, res) => {
+  try {
+    const { limit = 20, unreadOnly = false } = req.query
+
+    const where = { userId: req.user.userId }
+    if (unreadOnly === 'true') {
+      where.isRead = false
+    }
+
+    const [notifications, unreadCount] = await Promise.all([
+      prisma.notification.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: parseInt(limit)
+      }),
+      prisma.notification.count({
+        where: { userId: req.user.userId, isRead: false }
+      })
+    ])
+
+    res.json({ notifications, unreadCount })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch notifications' })
+  }
+})
+
+// Mark notification as read
+app.put('/notifications/:id/read', verifyToken, async (req, res) => {
+  try {
+    const notification = await prisma.notification.update({
+      where: { id: req.params.id, userId: req.user.userId },
+      data: { isRead: true }
+    })
+    res.json(notification)
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to mark notification as read' })
+  }
+})
+
+// Mark all notifications as read
+app.put('/notifications/mark-all-read', verifyToken, async (req, res) => {
+  try {
+    await prisma.notification.updateMany({
+      where: { userId: req.user.userId, isRead: false },
+      data: { isRead: true }
+    })
+    res.json({ message: 'All notifications marked as read' })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to mark notifications as read' })
+  }
+})
+
+// Create notification (internal helper)
+async function createNotification(userId, type, title, message, link = null) {
+  return prisma.notification.create({
+    data: { userId, type, title, message, link }
+  })
+}
+
+// ==================== ADMIN ANALYTICS ROUTES ====================
+
+app.get('/admin/analytics', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const { days = 30 } = req.query
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - parseInt(days))
+
+    // User growth over time
+    const users = await prisma.user.findMany({
+      where: { createdAt: { gte: startDate } },
+      select: { createdAt: true },
+      orderBy: { createdAt: 'asc' }
+    })
+
+    // Group users by date
+    const userGrowth = {}
+    users.forEach(u => {
+      const date = u.createdAt.toISOString().split('T')[0]
+      userGrowth[date] = (userGrowth[date] || 0) + 1
+    })
+
+    const userGrowthArray = Object.entries(userGrowth).map(([date, count]) => ({ date, count }))
+
+    // Event statistics
+    const events = await prisma.gfgEvent.findMany({
+      where: { startDate: { gte: startDate } },
+      include: {
+        _count: { select: { registrations: true, checkins: true, feedbacks: true } }
+      },
+      orderBy: { startDate: 'desc' }
+    })
+
+    const eventStats = events.map(e => ({
+      id: e.id,
+      title: e.title,
+      date: e.startDate,
+      registrations: e._count.registrations,
+      attendance: e._count.checkins,
+      feedbacks: e._count.feedbacks
+    }))
+
+    // Overall engagement metrics
+    const [totalUsers, activeUsers, totalEvents, totalCheckins, totalPoints] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { points: { gt: 0 } } }),
+      prisma.gfgEvent.count(),
+      prisma.eventCheckin.count(),
+      prisma.user.aggregate({ _sum: { points: true } })
+    ])
+
+    // Top performers
+    const topPerformers = await prisma.user.findMany({
+      where: { points: { gt: 0 } },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        points: true,
+        _count: { select: { eventCheckins: true } }
+      },
+      orderBy: { points: 'desc' },
+      take: 10
+    })
+
+    res.json({
+      userGrowth: userGrowthArray,
+      eventStats,
+      engagement: {
+        totalUsers,
+        activeUsers,
+        totalEvents,
+        totalCheckins,
+        totalPoints: totalPoints._sum.points || 0,
+        avgPointsPerUser: totalUsers > 0 ? Math.round((totalPoints._sum.points || 0) / totalUsers) : 0
+      },
+      topPerformers: topPerformers.map(u => ({
+        ...u,
+        eventsAttended: u._count.eventCheckins
+      }))
+    })
+  } catch (error) {
+    console.error('Analytics error:', error)
+    res.status(500).json({ message: 'Failed to fetch analytics' })
   }
 })
 
