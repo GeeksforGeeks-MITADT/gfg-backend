@@ -106,20 +106,6 @@ app.use(express.json())
 // Serve uploaded files statically
 app.use('/uploads', express.static(uploadsDir))
 
-// Image upload endpoint
-app.post('/upload', verifyToken, requireAdmin, upload.single('poster'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: 'No image file uploaded' })
-  }
-
-  const imageUrl = `${process.env.BACKEND_URL || `http://localhost:${PORT}`}/uploads/${req.file.filename}`
-  res.json({
-    message: 'Image uploaded successfully',
-    url: imageUrl,
-    filename: req.file.filename
-  })
-})
-
 // Health check route
 app.get('/', (req, res) => {
   res.send('🎉 GFG Backend is running with Supabase!')
