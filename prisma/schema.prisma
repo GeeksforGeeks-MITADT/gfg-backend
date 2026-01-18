@@ -57,6 +57,15 @@ model User {
   role            Role     @default(USER)
   isBanned        Boolean  @default(false)
   
+  // Leaderboard & Points
+  points          Int      @default(0)
+  
+  // Email Verification
+  emailVerified      Boolean   @default(false)
+  verificationCode   String?
+  verificationExpiry DateTime?
+  
+  // CodeForge fields
   rating          Int      @default(1500)
   maxRating       Int      @default(1500)
   problemsSolved  Int      @default(0)
@@ -78,8 +87,10 @@ model User {
   eventPhotos         EventPhoto[]
   eventComments       EventComment[]
   testimonials        Testimonial[]
+  notifications       Notification[]
   
   @@index([rating(sort: Desc)])
+  @@index([points(sort: Desc)])
 }
 
 model Problem {
@@ -277,6 +288,7 @@ model GfgEvent {
   registrationLink String?
   posterUrl        String?
   location         String?
+  whatsappLink     String?   // WhatsApp community/group link for this event
   
   // Multiple event images
   imageUrls        String[]
@@ -412,4 +424,23 @@ model Testimonial {
   isFeatured  Boolean  @default(false)
   
   createdAt   DateTime @default(now())
+}
+
+// Notifications
+model Notification {
+  id        String   @id @default(uuid())
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type      String   // "event_reminder", "badge_earned", "welcome", "event_registered"
+  title     String
+  message   String
+  link      String?  // Optional deep link to page
+  isRead    Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+  
+  @@index([userId, isRead])
+  @@index([userId, createdAt(sort: Desc)])
 }
