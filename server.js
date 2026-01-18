@@ -612,7 +612,8 @@ app.get('/events/:id', async (req, res) => {
       ...event,
       date: `${event.startDate.toISOString().split('T')[0]} to ${event.endDate.toISOString().split('T')[0]}`,
       time: event.startTime && event.endTime ? `${event.startTime} - ${event.endTime}` : null,
-      registrationCount: event._count.registrations,
+      // Use manual registrationCount if set, otherwise use actual registrations
+      registrationCount: event.registrationCount || event._count.registrations,
       isPast: new Date(event.endDate) < new Date()
     }
 
@@ -685,7 +686,8 @@ app.post('/events', verifyToken, requireAdmin, async (req, res) => {
 app.put('/events/:id', verifyToken, requireAdmin, async (req, res) => {
   try {
     const {
-      title, description, category, date, time, speakers, prerequisites, registrationLink, posterUrl, location
+      title, description, category, date, time, speakers, prerequisites,
+      registrationLink, posterUrl, location, themeColor, registrationCount, whatsappLink
     } = req.body
 
     // Parse date and time if provided
@@ -699,6 +701,9 @@ app.put('/events/:id', verifyToken, requireAdmin, async (req, res) => {
     if (registrationLink !== undefined) updateData.registrationLink = registrationLink
     if (posterUrl !== undefined) updateData.posterUrl = posterUrl
     if (location !== undefined) updateData.location = location
+    if (themeColor !== undefined) updateData.themeColor = themeColor
+    if (whatsappLink !== undefined) updateData.whatsappLink = whatsappLink
+    if (registrationCount !== undefined) updateData.registrationCount = parseInt(registrationCount) || 0
 
     if (date) {
       const [start, end] = date.split(' to ')
