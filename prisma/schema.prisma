@@ -295,6 +295,7 @@ model GfgEvent {
   
   isPublished      Boolean  @default(true)
   maxParticipants  Int?     // null = unlimited
+  registrationCount Int?    @default(0) // Manual override for displayed count
   
   // Post-event recap content
   recapSummary     String?   // What happened at the event
